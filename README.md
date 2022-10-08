@@ -1,4 +1,4 @@
-# Ballision - An Little Iottalk Game
+# Ballision - A Little Iottalk Game
 ---
 ## Description
 + 使用者人數2人
