@@ -1,15 +1,18 @@
 from vpython import *
 from math import *
+import asyncio
 import time, random, requests
 import DAN
 
 ### for Iottalk
 #ServerURL = 'http://IP:9999'      #with non-secure connection
 ServerURL = 'https://2.iottalk.tw' #with SSL connection
-Reg_addr = 'fjiojsnoijw' #if None, Reg_addr = MAC address
+Reg_addr = '119' #if None, Reg_addr = MAC address
 
-DAN.profile['dm_name']='Ball-Collision'
-DAN.profile['df_list']=['Orientation','Orientation-O', 'Orientation_UserA']
+# DAN.profile['dm_name']='Ball-Collision'
+# DAN.profile['df_list']=['Orientation','Orientation-O', 'Orientation_UserA']
+DAN.profile['dm_name']='Baltest'
+DAN.profile['df_list']=['Orientation','Orient-O', 'Orient-O-2']
 #DAN.profile['d_name']= 'Assign a Device Name' 
 
 DAN.device_registration_with_retry(ServerURL, Reg_addr)
@@ -40,7 +43,9 @@ class SystemAttribute():
 		self.start = False
 
 global system
-
+s = Scene()
+global Data_UserA
+global Data_UserB
 
 def BoundaryDetection(ball_A, ball_B):
 	### Do Elastic collision
@@ -77,20 +82,20 @@ def InjectFriction(velocity, friction):
 def Start(b0):
 	global system
 	system.start = True
-b0 = button(text="Start", pos=Scene.Window.title_anchor, bind=Start)
+b0 = button(text="Start", pos=s.Window.title_anchor, bind=Start)
 
 ### Reset
 def Reset(b1):
 	global system
 	system.re = not system.re
-b1 = button(text="Reset", pos=Scene.Window.title_anchor, bind=Reset)
+b1 = button(text="Reset", pos=s.Window.title_anchor, bind=Reset)
 
 # 
 def stop(b2):
     global system
     system.end = not system.end
     
-b2 = button(text="Exit", pos=Scene.Window.title_anchor, bind=stop)
+b2 = button(text="Exit", pos=s.Window.title_anchor, bind=stop)
 
 def init(ball_A, ball_B):
 	global system
@@ -102,54 +107,56 @@ def init(ball_A, ball_B):
 	system.re = False
 	system.start = False
 
+async def PullData():
+	try:
+		#DAN.push ('i_0516241', IDF_data) #Push data to an input device feature "Dummy_Sensor"
+
+		#==================================
+		ODF_data_UserA = DAN.pull('Orient-O')
+		ODF_data_UserB = DAN.pull('Orient-O-2')#Pull data from an output device feature "Dummy_Control"
+			
+		if ODF_data_UserA != None:
+			global Data_UserA
+			Data_UserA = ODF_data_UserA
+			#print("debug :" , Data_UserA[2])
+		if ODF_data_UserB != None:
+			global Data_UserB
+			Data_UserB = ODF_data_UserB
+		# print('1:',ODF_data_UserA[1],' 2:', ODF_data_UserA[2])
+
+	except Exception as e:
+		print(e)
+		if str(e).find('mac_addr not found:') != -1:
+			print('Reg_addr is not found. Try to re-register...')
+			DAN.device_registration_with_retry(ServerURL, Reg_addr)
+		else:
+			print('Connection failed due to unknow reasons.')
+	await asyncio.sleep(0.01)
+
 
 if __name__ == '__main__':
 
 	system = SystemAttribute(0.01, 0.1, 0, 0.1, 0.01)
-	ball_A = Scene.ballA
-	ball_B = Scene.ballB
+	ball_A = s.ballA
+	ball_B = s.ballB
 	"""
 	wallL = Scene.wallL
 	wallR = Scene.wallR
 	wallT = Scene.wallT
 	wallD = Scene.wallD
 	"""
-	wallB = Scene.wallB
-	
+	wallB = s.wallB
+	Data_UserA = None
+	Data_UserB = None
 
 	ball_A.velocity = vector(0, 0, 0)
 	ball_B.velocity = vector(0, 0, 0)
-	Data_UserA = []
-	Data_UserB = []
 	
 	varrA = arrow(pos = ball_A.pos, axis = system.vscale*ball_A.velocity, color = color.yellow)
 	varrB = arrow(pos = ball_B.pos, axis = system.vscale*ball_B.velocity, color = color.yellow)
 
 	while not system.end:
-		### IottalkConnection
-		try:
-		#DAN.push ('i_0516241', IDF_data) #Push data to an input device feature "Dummy_Sensor"
-
-		#==================================
-			ODF_data_UserA = DAN.pull('Orientation_UserA')
-			ODF_data_UserB = DAN.pull('Orientation-O')#Pull data from an output device feature "Dummy_Control"
-			if ODF_data_UserA != None:
-				Data_UserA = ODF_data_UserA
-				#print("debug :" , Data_UserA[2])
-			if ODF_data_UserB != None:
-				Data_UserB = ODF_data_UserB
-				#print('1:',ODF_data_UserA[1],' 2:', ODF_data_UserA[2])
-
-		except Exception as e:
-			print(e)
-			if str(e).find('mac_addr not found:') != -1:
-				print('Reg_addr is not found. Try to re-register...')
-				DAN.device_registration_with_retry(ServerURL, Reg_addr)
-			else:
-				print('Connection failed due to unknow reasons.')
-				time.sleep(1)    
-		time.sleep(0.001)
-
+		asyncio.run(PullData())
 
 		if system.start:
 			if system.re:
@@ -194,16 +201,21 @@ if __name__ == '__main__':
 			###
 			"""
 			### ball A control
-			if Data_UserA[2] < 0: ball_A.velocity.x -= system.dv * abs(Data_UserA[2]) / 90
-			if Data_UserA[2] > 0: ball_A.velocity.x += system.dv * abs(Data_UserA[2]) / 90
-			if Data_UserA[1] > 0: ball_A.velocity.y -= system.dv * abs(Data_UserA[1]) / 90
-			if Data_UserA[1] < 0: ball_A.velocity.y += system.dv * abs(Data_UserA[1]) / 90
+			if not Data_UserA:
+				print("no object!!")
+				time.sleep(0.5)
+			if Data_UserA: 
+				if Data_UserA[2] < 0: ball_A.velocity.x -= system.dv * abs(Data_UserA[2]) / 90
+				if Data_UserA[2] > 0: ball_A.velocity.x += system.dv * abs(Data_UserA[2]) / 90
+				if Data_UserA[1] > 0: ball_A.velocity.y -= system.dv * abs(Data_UserA[1]) / 90
+				if Data_UserA[1] < 0: ball_A.velocity.y += system.dv * abs(Data_UserA[1]) / 90
 			###
 			### ball B control
-			if Data_UserB[2] < 0: ball_B.velocity.x -= system.dv * abs(Data_UserB[2]) / 90
-			if Data_UserB[2] > 0: ball_B.velocity.x += system.dv * abs(Data_UserB[2]) / 90
-			if Data_UserB[1] > 0: ball_B.velocity.y -= system.dv * abs(Data_UserB[1]) / 90
-			if Data_UserB[1] < 0: ball_B.velocity.y += system.dv * abs(Data_UserB[1]) / 90
+			if Data_UserB:
+				if Data_UserB[2] < 0: ball_B.velocity.x -= system.dv * abs(Data_UserB[2]) / 90
+				if Data_UserB[2] > 0: ball_B.velocity.x += system.dv * abs(Data_UserB[2]) / 90
+				if Data_UserB[1] > 0: ball_B.velocity.y -= system.dv * abs(Data_UserB[1]) / 90
+				if Data_UserB[1] < 0: ball_B.velocity.y += system.dv * abs(Data_UserB[1]) / 90
 
 			### A block to check collision //no use??
 			if (ball_A.pos - ball_B.pos).mag <=1.5:
