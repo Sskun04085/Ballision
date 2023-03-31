@@ -1,25 +1,27 @@
 from vpython import *
 from math import *
+from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import time, random, requests
 import DAN
 
-### for Iottalk
+# for Iottalk
 #ServerURL = 'http://IP:9999'      #with non-secure connection
 ServerURL = 'https://2.iottalk.tw' #with SSL connection
 Reg_addr = '119' #if None, Reg_addr = MAC address
+Ofeature = ['Orient-O', 'Orient-O-2']
 
 # DAN.profile['dm_name']='Ball-Collision'
 # DAN.profile['df_list']=['Orientation','Orientation-O', 'Orientation_UserA']
 DAN.profile['dm_name']='Baltest'
-DAN.profile['df_list']=['Orientation','Orient-O', 'Orient-O-2']
+DAN.profile['df_list']=['Orientation', Ofeature[0], Ofeature[1]]
 #DAN.profile['d_name']= 'Assign a Device Name' 
 
 DAN.device_registration_with_retry(ServerURL, Reg_addr)
 #DAN.deregister()  #if you want to deregister this device, uncomment this line
 #exit()            #if you want to deregister this device, uncomment this line
 
-### for vpy
+# for vpy
 class Scene():
 	scene.autoscale = False
 	Window = canvas(title = "collision\n\n", width = 600, height = 400, center=vec(0, 0, 0), background = color.black)
@@ -48,13 +50,13 @@ global Data_UserA
 global Data_UserB
 
 def BoundaryDetection(ball_A, ball_B):
-	### Do Elastic collision
+	# Do Elastic collision
 	DirectionA2B = (ball_B.pos - ball_A.pos).norm()
 	DirectionB2A = -DirectionA2B
 
 	VectorAlong2B = ball_A.velocity
 	if (ball_A.pos - ball_B.pos).mag <= 1.0:
-		##cause collision A give B and B give A
+		# cause collision A give B and B give A
 		if (ball_A.velocity.dot(DirectionA2B) > 0 and ball_A.velocity.mag >= ball_B.velocity.mag) \
 		or (ball_B.velocity.dot(DirectionB2A) > 0 and ball_B.velocity.mag >= ball_A.velocity.mag): ##cause collision A give B
 			Parallel2B = DirectionA2B * ball_A.velocity.dot(DirectionA2B)
@@ -78,13 +80,13 @@ def InjectFriction(velocity, friction):
 	velocity.x += signX * (XEdge/ThirdEdge) * friction
 	velocity.y += signY * (YEdge/ThirdEdge) * friction
 	return velocity
-### Start
+# Start
 def Start(b0):
 	global system
 	system.start = True
 b0 = button(text="Start", pos=s.Window.title_anchor, bind=Start)
 
-### Reset
+# Reset
 def Reset(b1):
 	global system
 	system.re = not system.re
@@ -107,14 +109,24 @@ def init(ball_A, ball_B):
 	system.re = False
 	system.start = False
 
+# thread method
+# def pull_in_thread(feature_name):
+# 	with ThreadPoolExecutor(max_workers=1) as executor:
+# 		future = executor.submit(DAN.pull, feature_name)
+# 		return future.result()
+
+# async method
 async def PullData():
 	try:
 		#DAN.push ('i_0516241', IDF_data) #Push data to an input device feature "Dummy_Sensor"
 
 		#==================================
-		ODF_data_UserA = DAN.pull('Orient-O')
-		ODF_data_UserB = DAN.pull('Orient-O-2')#Pull data from an output device feature "Dummy_Control"
-			
+		task_A = asyncio.create_task(DAN.pull(Ofeature[0]))
+		task_B = asyncio.create_task(DAN.pull(Ofeature[1]))
+
+		ODF_data_UserA = await task_A
+		ODF_data_UserB = await task_B
+
 		if ODF_data_UserA != None:
 			global Data_UserA
 			Data_UserA = ODF_data_UserA
@@ -131,7 +143,7 @@ async def PullData():
 			DAN.device_registration_with_retry(ServerURL, Reg_addr)
 		else:
 			print('Connection failed due to unknow reasons.')
-	await asyncio.sleep(0.01)
+	# await asyncio.sleep(0.01)
 
 
 if __name__ == '__main__':
@@ -139,12 +151,12 @@ if __name__ == '__main__':
 	system = SystemAttribute(0.01, 0.1, 0, 0.1, 0.01)
 	ball_A = s.ballA
 	ball_B = s.ballB
-	"""
-	wallL = Scene.wallL
-	wallR = Scene.wallR
-	wallT = Scene.wallT
-	wallD = Scene.wallD
-	"""
+	
+	# wallL = Scene.wallL
+	# wallR = Scene.wallR
+	# wallT = Scene.wallT
+	# wallD = Scene.wallD
+	
 	wallB = s.wallB
 	Data_UserA = None
 	Data_UserB = None
@@ -157,6 +169,30 @@ if __name__ == '__main__':
 
 	while not system.end:
 		asyncio.run(PullData())
+		# try:
+		# #DAN.push ('i_0516241', IDF_data) #Push data to an input device feature "Dummy_Sensor"
+
+		# #==================================
+		# 	ODF_data_UserA = pull_in_thread('Orient-O')
+		# 	ODF_data_UserB = pull_in_thread('Orient-O-2')#Pull data from an output device feature "Dummy_Control"
+				
+		# 	if ODF_data_UserA != None:
+		# 		# global Data_UserA
+		# 		Data_UserA = ODF_data_UserA
+		# 		#print("debug :" , Data_UserA[2])
+		# 	if ODF_data_UserB != None:
+		# 		# global Data_UserB
+		# 		Data_UserB = ODF_data_UserB
+		# 	# print('1:',ODF_data_UserA[1],' 2:', ODF_data_UserA[2])
+
+		# except Exception as e:
+		# 	print(e)
+		# 	if str(e).find('mac_addr not found:') != -1:
+		# 		print('Reg_addr is not found. Try to re-register...')
+		# 		DAN.device_registration_with_retry(ServerURL, Reg_addr)
+		# 	else:
+		# 		print('Connection failed due to unknow reasons.')
+		# await asyncio.sleep(0.01)
 
 		if system.start:
 			if system.re:
@@ -186,20 +222,20 @@ if __name__ == '__main__':
 			ball_B.pos = ball_B.pos + ball_B.velocity*system.deltaT
 			system.t = system.t + system.deltaT
 			###
-			"""
-			### ball A control
-			if 'left' in k: ball_A.velocity.x -= system.dv
-			if 'right' in k: ball_A.velocity.x += system.dv
-			if 'down' in k: ball_A.velocity.y -= system.dv
-			if 'up' in k: ball_A.velocity.y += system.dv
-			###
-			### ball B control
-			if 'a' in k: ball_B.velocity.x -= system.dv
-			if 'd' in k: ball_B.velocity.x += system.dv
-			if 's' in k: ball_B.velocity.y -= system.dv
-			if 'w' in k: ball_B.velocity.y += system.dv
-			###
-			"""
+			
+			# ### ball A control
+			# if 'left' in k: ball_A.velocity.x -= system.dv
+			# if 'right' in k: ball_A.velocity.x += system.dv
+			# if 'down' in k: ball_A.velocity.y -= system.dv
+			# if 'up' in k: ball_A.velocity.y += system.dv
+			# ###
+			# ### ball B control
+			# if 'a' in k: ball_B.velocity.x -= system.dv
+			# if 'd' in k: ball_B.velocity.x += system.dv
+			# if 's' in k: ball_B.velocity.y -= system.dv
+			# if 'w' in k: ball_B.velocity.y += system.dv
+			# ###
+			
 			### ball A control
 			if not Data_UserA:
 				print("no object!!")
@@ -221,21 +257,21 @@ if __name__ == '__main__':
 			if (ball_A.pos - ball_B.pos).mag <=1.5:
 				BoundaryDetection(ball_A, ball_B)
 			###
-			"""
-			if ball_A.pos.x > wallR.pos.x or ball_A.pos.x < wallL.pos.x:
-					ball_A.velocity.x = -ball_A.velocity.x
-			if ball_A.pos.y > wallT.pos.y or ball_A.pos.y < wallD.pos.y:
-					ball_A.velocity.y = -ball_A.velocity.y
-			if ball_A.pos.z > 6.0 or ball_A.pos.z < wallB.pos.z:
-					ball_A.velocity.z = -ball_A.velocity.z	
+			
+			# if ball_A.pos.x > wallR.pos.x or ball_A.pos.x < wallL.pos.x:
+			# 		ball_A.velocity.x = -ball_A.velocity.x
+			# if ball_A.pos.y > wallT.pos.y or ball_A.pos.y < wallD.pos.y:
+			# 		ball_A.velocity.y = -ball_A.velocity.y
+			# if ball_A.pos.z > 6.0 or ball_A.pos.z < wallB.pos.z:
+			# 		ball_A.velocity.z = -ball_A.velocity.z	
 
-			if ball_B.pos.x > wallR.pos.x or ball_B.pos.x < wallL.pos.x:
-					ball_B.velocity.x = -ball_B.velocity.x
-			if ball_B.pos.y > wallT.pos.y or ball_B.pos.y < wallD.pos.y:
-					ball_B.velocity.y = -ball_B.velocity.y
-			if ball_B.pos.z > 6.0 or ball_B.pos.z < wallB.pos.z:
-					ball_B.velocity.z = -ball_B.velocity.z	
-			"""
+			# if ball_B.pos.x > wallR.pos.x or ball_B.pos.x < wallL.pos.x:
+			# 		ball_B.velocity.x = -ball_B.velocity.x
+			# if ball_B.pos.y > wallT.pos.y or ball_B.pos.y < wallD.pos.y:
+			# 		ball_B.velocity.y = -ball_B.velocity.y
+			# if ball_B.pos.z > 6.0 or ball_B.pos.z < wallB.pos.z:
+			# 		ball_B.velocity.z = -ball_B.velocity.z	
+			
 
 			ball_A.velocity = InjectFriction(ball_A.velocity, system.friction)
 			ball_B.velocity = InjectFriction(ball_B.velocity, system.friction)
